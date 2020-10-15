@@ -2,13 +2,14 @@ const fs = require('./utils/fs');
 const Resolver = require('./Resolver');
 const workerFarm = require('worker-farm');
 const promisify = require('./utils/promisify');
-const Module = require('./Module');
+const Parser = require('./Parser');
 
 class Bundle {
   constructor(main, options) {
     this.mainFile = main;
     this.options = options;
     this.resolver = new Resolver(options);
+    this.parser = new Parser(options);
 
     this.loadedModules = new Map;
     this.loading = new Set;
@@ -19,7 +20,6 @@ class Bundle {
   async collectDependencies() {
     let main = await this.resolveModule(this.mainFile);
     await this.loadModule(main);
-    console.log('done');
     workerFarm.end(this.farm);
     return main;
   }
@@ -30,7 +30,7 @@ class Bundle {
       return this.loadedModules.get(path);
     }
 
-    let module = new Module(path, this.options);
+    let module = this.parser.getAsset(path, this.options);
     this.loadedModules.set(path, module);
     return module;
   }
