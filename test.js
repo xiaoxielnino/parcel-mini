@@ -1,7 +1,7 @@
 const Bundle = require("./src/index");
 
 async function run() {
-  let bundle = new Bundle('/Users/chenguanxi/Netease/my-projects/node-project/parcel-mini/examples/commonjs/index.js');
+  let bundle = new Bundle('./examples/commonjs/index.js');
   console.log('bundle====', bundle);
   let module = await bundle.collectDependencies();
   printDeps(module);
