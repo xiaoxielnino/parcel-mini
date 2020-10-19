@@ -1,7 +1,14 @@
 const Parser = require('./Parser');
 const fs = require('./utils/fs');
+const babel = require('./transforms/babel');;
+
+process.on('unhandledRejection', console.error);
 
 let parser;
+
+function emit(event, ...args) {
+  process.send({ event, args})
+}
 
 module.exports = async function(path, options, callback) {
   if(!parser) {
@@ -16,5 +23,10 @@ module.exports = async function(path, options, callback) {
   let asset = parser.getAsset(path, options);
   await asset.getDependencies();
 
-  callback(null, Array.from(asset.dependencies));
+  await babel(asset);
+
+  callback(null,{
+    deps: Array.from(asset.dependencies),
+    contents: asset.contents
+  });
 }

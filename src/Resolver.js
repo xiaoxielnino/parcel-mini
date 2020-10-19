@@ -23,7 +23,9 @@ class Resolver {
     });
 
     if(Array.isArray(res)) {
-      res = res[0];
+      res = { path: res[0], pkg: res[1]};
+    } else {
+      res = { path: res };
     }
     this.cache.set(key, res);
     return res;

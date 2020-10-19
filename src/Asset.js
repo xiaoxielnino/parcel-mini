@@ -2,9 +2,10 @@ const fs = require('./utils/fs');
 const path = require('path');
 
 class Asset {
-  constructor(name, options) {
+  constructor(name, pkg, options) {
     this.name = name;
     this.basename = path.basename(this.name, path.extname(this.name));
+    this.package = pkg;
     this.options = options;
     this.encoding = 'utf-8';
 
@@ -16,7 +17,7 @@ class Asset {
 
   async loadIfNeeded() {
     if(!this.contents) {
-      this.contents = await fs.readFile(this.name, this.encoding);
+      this.contents = await this.load()
     }
   }
 
@@ -30,6 +31,10 @@ class Asset {
   async getDependencies() {
     await this.parseIfNeeded();
     this.collectDependencies()
+  }
+
+  async load() {
+    return await fs.readFile(this.name, this.encoding);
   }
 
   parse() {
