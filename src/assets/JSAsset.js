@@ -4,7 +4,20 @@ const walk = require('babylon-walk');
 const Asset = require('../Asset');
 const babylon = require('babylon');
 
+const IMPORT_RE = /import|export [^;]* from|require\s\(/
+const GLOBAL_RE = /process|__dirname|__filename|global|Buffer/;
 class JSAsset extends Asset {
+
+  constructor(name, pkg, options) {
+    super(name, pkg, options);
+    this.type = 'js';
+    this.globals = new Map;
+    this.isAstDirty = false;
+  }
+
+  mightHaveDependencies() {
+    return IMPORT_RE.test(this.contents) || GLOBAL_RE.test(this.contents)
+  }
   parse(code) {
     const options = {
       filename: this.name,
@@ -21,10 +34,11 @@ class JSAsset extends Asset {
         'classProperties',
         'decorators',
         'exportExtensions',
+        'dynamicImport',
         'jsx',
         'flow'
       ]
-    }
+    };
 
     return babylon.parse(code, options);
   }

@@ -10,23 +10,23 @@ function emit(event, ...args) {
   process.send({ event, args})
 }
 
-module.exports = async function(path, options, callback) {
-  if(!parser) {
-    parser = new Parser(options || {});
+exports.init = function(options, callback) {
+  parser = new Parser(options || {});
+  callback();
+}
+
+exports.run = async function(path, pkg,  options, callback) {
+
+  try {
+    let asset = parser.getAsset(path, pkg, options);
+    await asset.process();
+
+    callback(null, {
+      dependencies: Array.from(asset.dependencies.values()),
+      generated: asset.generated,
+      hash: asset.hash
+    });
+  } catch(err) {
+    callback(err)
   }
-
-  // let mod = new Module(path, options);
-  // mod.code = await fs.readFile(path, 'utf-8');
-  // mod.ast = parser.parse(path, mod.code);
-  // mod.collectDependencies();
-
-  let asset = parser.getAsset(path, options);
-  await asset.getDependencies();
-
-  await babel(asset);
-
-  callback(null,{
-    deps: Array.from(asset.dependencies),
-    contents: asset.contents
-  });
 }

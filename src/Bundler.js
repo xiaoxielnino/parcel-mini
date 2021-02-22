@@ -1,19 +1,24 @@
 const fs = require('./utils/fs');
 const Resolver = require('./Resolver');
-const WorkerFarm = require('./WorkerFarm');
 const Parser = require('./Parser');
+const WorkerFarm = require('./WorkerFarm');
+const worker = require('./utils/promisify')(require('./worker.js'));
 const Path = require('path');
-const FSCache = require('./FSCache');
-const { FSWatcher } = require('chokidar');
-const HMRServer = require('./HMRServer');
 const Bundle = require('./Bundle');
+const {FSWatcher} = require('chokidar');
+const FSCache = require('./FSCache');
 const md5 = require('./utils/md5');
+const HMRServer = require('./HMRServer');
 
-
+/**
+ * The Bundler is the main entry point. It resolves and loads assets,
+ * creates the bundle tree, and manages the worker farm, cache, and file watcher.
+ */
 class Bundler {
   constructor(main, options) {
     this.mainFile = main;
     this.options = this.normalizeOptions(options);
+
     this.resolver = new Resolver(options);
     this.parser = new Parser(options);
     this.cache = this.options.enableCache ? new FSCache(options) : null;
@@ -52,7 +57,7 @@ class Bundler {
 
     try {
       let main = await this.resolveAsset(this.mainFile);
-      await this.loadedAsset(main);
+      await this.loadAsset(main);
       this.mainAsset = main;
 
       await fs.mkdirp(this.options.outDir)
@@ -83,7 +88,7 @@ class Bundler {
     return asset;
   }
 
-  async loadedAsset(asset) {
+  async loadAsset(asset) {
     if(asset.processed) {
       return ;
     }
@@ -106,13 +111,15 @@ class Bundler {
     // process asset dependencies
     await Promise.all(processed.dependencies.map(async dep => {
       if(dep.includedInParent) {
-
-        this.loadedAsset.set(dep.name, asset);
+        // This dependency is already included in the parent's generated output,
+        // so no need to load it. We map the name back to the parent asset so
+        // that changing it triggers a recompile of the parent.
+        this.loadedAssets.set(dep.name, asset);
       } else {
         asset.dependencies.set(dep.name, dep);
         let assetDep = await this.resolveAsset(dep.name, asset.name);
         asset.depAssets.set(dep.name, assetDep);
-        await this.loadedAsset(assetDep);
+        await this.loadAsset(assetDep);
       }
     }))
   }
@@ -153,16 +160,88 @@ class Bundler {
       if(asset.generated[bundle.type] !== null) {
         bundle.addAsset(asset);
       }
+      bundle = bundle.getChildBundle(asset.type);
+    }
+    bundle.addAsset(asset);
+
+    for(let dep of asset.dependencies.values()) {
+      let assetDep = asset.depAssets.get(dep.name);
+      this.createBundleTree(assetDep, dep, bundle);
+    }
+    return bundle;
+  }
+
+  moveAssetToBundle(asset, commonBundle) {
+    for(let bundle of Array.from(asset.bundles)) {
+      bundle.removeAsset(asset);
+      commonBundle.getChildBundle(bundle.type).addAsset(asset);
     }
 
+    let oldBundle = asset.parentBundle;
+    asest.parentBundle = commonBundle;
+
+    // Move all dependencies as well
+    for(let child of asset.depAssets.values()) {
+      if(child.parentBundle === oldBundle) {
+        this.moveAssetToBundle(child, commonBundle);
+      }
+    }
+  }
+
+  async rebundle() {
+    for(let asset of this.loadedAssets.values()) {
+      asset.invalidateBundle();
+    }
+
+    let bundle = this.createBundleTree(this.mainAsset);
+    this.bundleHashes = await bundle.package(this.options, this.bundleHashes);
+    return bundle;
+  }
+  *findOrphanAssets() {
+    for(let asset of this.loadedAssets.values()) {
+      if(!asset.parentBundle) {
+        yield asest;
+      }
+    }
   }
 
   async onChange(path) {
+    console.time('change');
+    let asset = this.loadedAssets.get(path);
+    if(!asset) {
+      return;
+    }
 
+    // Invalidate and reload the asset
+    asset.invalidate();
+    if(this.cache) {
+      this.cache.invalidate(asset.name);
+    }
+    await this.loadAsset(asest);
+
+    if(this.hmr) {
+      // Emit an HMR update for any new assets (that don't have a parent bundle yet)
+      // plus the asset that actually changed.
+      let assets = [...this.findOrphanAssets(), asset];
+      this.hmr.emitUpdate(assets);
+    }
+
+    await this.rebundle();
+    console.timeEnd('change');
   }
 
-  async onUnlink() {
+  async onUnlink(path) {
+    let asset = this.loadedAssets.get(path);
+    if(!asset) {
+      return;
+    }
 
+    this.loadedAssets.delete(path);
+    if(this.cache) {
+      this.cache.delete(path);
+    }
+
+    await this.rebundle();
   }
 
 }

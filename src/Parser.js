@@ -1,7 +1,9 @@
 const path = require('path');
+const RawAsset = require('./Asset');
 const JSAsset = require('./assets/JSAsset');
 const JSONAsset = require('./assets/JSONAsset');
-
+const GlobAsset = require('./assets/GlobAsset');
+const glob = require('glob');
 class Parser {
   constructor(options = {}) {
     this.extensions = {};
@@ -26,13 +28,12 @@ class Parser {
   }
 
   findParser(filename) {
-    let extensions = path.extname(filename);
-    let parser = this.extensions[extensions];
-    if(!parser) {
-      throw new Error('Could not find parser for extension' + extension);
-    }
 
-    return parser;
+    if(glob.hasMagic(filename)) {
+      return GlobAsset;
+    }
+    let extension = path.extname(filename);
+    return this.extensions[extension] || RawAsset;
   }
 
   getAsset(filename, pkg, options) {
